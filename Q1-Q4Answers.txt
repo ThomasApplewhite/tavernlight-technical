@@ -1,0 +1,112 @@
+Q1 - Fix or improve the implementation of the below methods
+
+function onLogout(player)
+	--checking for valid args
+	if not player then
+		return
+	end
+
+	--added a local for storagekey to release for easier modification
+	local storagekey = 1000
+
+	--[[moved local function into onLogout, since releaseStorage only exists to be an event for onLogout
+	added an argument for the key to release to fully decouple onLogout's release of key 1000 from
+	the releaseStorage event function]]
+	local function releaseStorage(player, releasekey)
+		player:setStorageValue(releasekey, -1)
+	end
+
+	if player:getStorageValue(storagekey) == 1 then
+		--needed to add storagevalue as a param to the add event call
+		--I don't know why this event needs to wait a second, maybe for other logout-related things to finish
+		addEvent(releaseStorage, 1000, player, storagevalue)
+	end
+	--most of tfs' login/logout events expect at least 1 return value. I assume this return true is
+	--for something like that
+	return true
+end
+
+
+Q2 - Fix or improve the implementation of the below method
+
+function printSmallGuildNames(memberCount)
+	local selectGuildQuery = "SELECT name FROM guilds WHERE max_members < %d;"
+	local resultId = db.storeQuery(string.format(selectGuildQuery, memberCount))
+	if not resultId
+		return
+	end
+	--[[after checking for valid resultId, just loop the result names until we run out
+	we can use a dowhile because resultId being valid means there's at least 1 valid result, so we don't need
+	to check for it twice]]
+	repeat
+		print(result.getString("name"))
+	until not result.next(resultId)
+end
+
+
+Q3 - Fix or improve the name and the implementation of the below method
+
+function removeMemberFromPlayerPartyByName(playerId, membername)
+	--get players and party, and make sure they're all valid
+	local player = Player(playerId)
+	if not player then
+		return
+	end
+	local otherplayer = Player(membername)
+	if not otherplayer then
+		return
+	end
+	--I'm assuming getParty() can return nil or invalid parties
+	local party = player:getParty()
+	if not party then
+		return
+	end
+
+	--party in tfs is a metatable, so if otherplayer is a valid index, then we can remove it directly
+	if party[otherplayer] then
+		party:removeMember(Player(membername))
+	end
+end
+
+
+Q4 - Assume all method calls work fine. Fix the memory leak issue in below method
+
+void Game::addItemToPlayer(const std::string& recipient, uint16_t itemId)
+{
+	/*getPlayerByName returns a pointer that should be managed elsewhere, so no need to free in this case
+	loadPlayerByName fills in the allocated pointer, which means in that case addItemToPlayer
+	is responsible for managing it (and freeing it later)
+	Not deleting the pointer after using loadPlayerByName causes the leak*/
+	
+	bool pointer_needs_delete = false;	
+	Player* player = g_game.getPlayerByName(recipient);
+	if (!player) {
+		player = new Player(nullptr);
+		if (!IOLoginData::loadPlayerByName(player, recipient)) {
+			delete player;
+			//null out dangling reference, even though we return immediately
+			//safety first!
+			player = nullptr;
+			return;
+		}
+		pointer_needs_delete = true;
+	}
+
+	Item* item = Item::CreateItem(itemId);
+	if (item) {
+		//I'm assuming that internalAddItem needs to maintain the data allocated by CreateItem
+		//so item should never be deleted by addItemToPlayer
+		g_game.internalAddItem(player->getInbox(), item, INDEX_WHEREEVER, FLAG_NOLIMIT);
+
+		if (player->isOffline()) {
+			IOLoginData::savePlayer(player);
+		}
+	}
+	
+	if(pointer_needs_delete)
+	{
+		delete player;
+		player = nullptr;
+	}
+}
+
